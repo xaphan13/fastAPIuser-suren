@@ -5,7 +5,6 @@ from fastapi.responses import ORJSONResponse
 from pydantic import ValidationError
 from sqlalchemy.exc import DatabaseError
 
-
 log = logging.getLogger(__name__)
 
 
@@ -35,8 +34,5 @@ def register_errors_handlers(app: FastAPI) -> None:
         )
         return ORJSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "message": "An unexpected error has occurred. "
-                "Our admins are already working on it."
-            },
+            content={"message": "An unexpected error has occurred. Our admins are already working on it."},
         )

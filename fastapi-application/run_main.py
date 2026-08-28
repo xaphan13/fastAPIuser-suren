@@ -1,6 +1,6 @@
 __all__ = (
-    "main_app",
     "main",
+    "main_app",
 )
 
 from core.config import settings

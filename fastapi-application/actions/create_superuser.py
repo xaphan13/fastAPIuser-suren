@@ -2,14 +2,12 @@ import asyncio
 import contextlib
 from os import getenv
 
-from api.dependencies.authentication import get_users_db
-from api.dependencies.authentication import get_user_manager
+from api.dependencies.authentication import get_user_manager, get_users_db
 from core.authentication.user_manager import UserManager
 from core.models import (
-    db_helper,
     User,
+    db_helper,
 )
-
 from core.schemas.user import UserCreate
 
 # from fastapi_users.exceptions import UserAlreadyExists
@@ -51,13 +49,12 @@ async def create_superuser(
         is_superuser=is_superuser,
         is_verified=is_verified,
     )
-    async with db_helper.session_factory() as session:
-        async with get_users_db_context(session) as users_db:
-            async with get_user_manager_context(users_db) as user_manager:
-                return await create_user(
-                    user_manager=user_manager,
-                    user_create=user_create,
-                )
+    async with db_helper.session_factory() as session, get_users_db_context(session) as users_db:
+        async with get_user_manager_context(users_db) as user_manager:
+            return await create_user(
+                user_manager=user_manager,
+                user_create=user_create,
+            )
 
 
 if __name__ == "__main__":

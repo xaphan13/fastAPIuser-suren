@@ -1,9 +1,7 @@
+from core.models import User
 from fastapi_users.password import PasswordHelper
 from sqladmin import ModelView
 from starlette.requests import Request
-
-from core.models import User
-
 
 password_helper = PasswordHelper()
 

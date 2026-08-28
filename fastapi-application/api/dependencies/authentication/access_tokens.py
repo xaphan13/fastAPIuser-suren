@@ -3,12 +3,11 @@ from typing import (
     Annotated,
 )
 
-from fastapi import Depends
-
 from core.models import (
-    db_helper,
     AccessToken,
+    db_helper,
 )
+from fastapi import Depends
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

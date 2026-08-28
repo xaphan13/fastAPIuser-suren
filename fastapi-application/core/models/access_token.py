@@ -5,8 +5,8 @@ from fastapi_users_db_sqlalchemy.access_token import (
     SQLAlchemyBaseAccessTokenTable,
 )
 from sqlalchemy import (
-    Integer,
     ForeignKey,
+    Integer,
 )
 from sqlalchemy.orm import (
     Mapped,
@@ -15,10 +15,12 @@ from sqlalchemy.orm import (
 )
 
 from core.types.user_id import UserIdType
+
 from .base import Base
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
     from core.models import User
 
 

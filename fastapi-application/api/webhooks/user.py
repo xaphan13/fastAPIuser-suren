@@ -1,6 +1,5 @@
-from fastapi import APIRouter
-
 from core.schemas.user import UserRegisteredNotification
+from fastapi import APIRouter
 
 router = APIRouter()
 

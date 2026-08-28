@@ -1,6 +1,6 @@
 __all__ = (
-    "get_access_tokens_db",
     "authentication_backend",
+    "get_access_tokens_db",
     "get_database_strategy",
     "get_user_manager",
     "get_users_db",

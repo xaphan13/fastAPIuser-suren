@@ -1,9 +1,8 @@
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Callable, Awaitable
 
 from fastapi import Request, Response
-
 
 type CallNext = Callable[[Request], Awaitable[Response]]
 
@@ -11,9 +10,7 @@ type CallNext = Callable[[Request], Awaitable[Response]]
 @dataclass
 class PathCounts:
     count: int = 0
-    statuses_counts: defaultdict[int, int] = field(
-        default_factory=lambda: defaultdict(int)
-    )
+    statuses_counts: defaultdict[int, int] = field(default_factory=lambda: defaultdict(int))
 
 
 class RequestsCountMiddlewareDispatch:

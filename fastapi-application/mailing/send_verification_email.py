@@ -2,6 +2,7 @@ from textwrap import dedent
 
 from core.models import User
 from jinja_templates import templates
+
 from mailing.send_email import send_email
 
 

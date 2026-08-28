@@ -1,15 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter
-from fastapi import Depends
-
 from core.authentication.fastapi_users import (
-    current_active_user,
     current_active_superuser,
+    current_active_user,
 )
 from core.config import settings
 from core.models import User
 from core.schemas.user import UserRead
+from fastapi import APIRouter, Depends
 
 router = APIRouter(
     prefix=settings.api.v1.messages,

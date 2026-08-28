@@ -1,9 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends
-
 from core.authentication.fastapi_users import current_active_user
 from core.models import User
+from fastapi import APIRouter, Depends, Request
 from jinja_templates import templates
 
 router = APIRouter(

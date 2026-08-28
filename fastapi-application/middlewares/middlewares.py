@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware

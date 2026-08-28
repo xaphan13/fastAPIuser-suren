@@ -1,11 +1,11 @@
 import secrets
 from typing import Any
 
+from core.models import AccessToken
 from sqladmin import ModelView
 from starlette.requests import Request
 
 from admin.converter import ModelConverter
-from core.models import AccessToken
 
 
 class AccessTokenAdmin(ModelView, model=AccessToken):

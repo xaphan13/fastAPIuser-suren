@@ -1,16 +1,14 @@
+from core.config import settings
 from fastapi import (
     APIRouter,
     Depends,
 )
 from fastapi.security import HTTPBearer
 
-from core.config import settings
-
 from .auth import router as auth_router
-from .users import router as users_router
 from .messages import router as messages_router
 from .service import router as service_router
-
+from .users import router as users_router
 
 http_bearer = HTTPBearer(auto_error=False)
 

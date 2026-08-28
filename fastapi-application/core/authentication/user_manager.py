@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from fastapi_cache import FastAPICache
 from fastapi_users import (
@@ -7,16 +7,16 @@ from fastapi_users import (
     IntegerIDMixin,
 )
 from fastapi_users.db import BaseUserDatabase
-
-from core.config import settings
-from core.types.user_id import UserIdType
-from core.models import User
 from mailing.send_email_confirmed import send_email_confirmed
 from mailing.send_verification_email import send_verification_email
 from utils.webhooks.user import send_new_user_notification
 
+from core.config import settings
+from core.models import User
+from core.types.user_id import UserIdType
+
 if TYPE_CHECKING:
-    from fastapi import Request, BackgroundTasks
+    from fastapi import BackgroundTasks, Request
     from fastapi_users.password import PasswordHelperProtocol
 
 log = logging.getLogger(__name__)
@@ -78,9 +78,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, UserIdType]):
             user.id,
             token,
         )
-        verification_link = request.url_for("verify_email").replace_query_params(
-            token=token
-        )
+        verification_link = request.url_for("verify_email").replace_query_params(token=token)
         self.background_tasks.add_task(
             send_verification_email,
             user=user,

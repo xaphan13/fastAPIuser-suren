@@ -1,8 +1,7 @@
-from typing import Annotated, TYPE_CHECKING
-
-from fastapi import Depends, BackgroundTasks
+from typing import TYPE_CHECKING, Annotated
 
 from core.authentication.user_manager import UserManager
+from fastapi import BackgroundTasks, Depends
 
 from .users import get_users_db
 

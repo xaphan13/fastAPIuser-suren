@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Request
-
 from jinja_templates import templates
 
 router = APIRouter(
