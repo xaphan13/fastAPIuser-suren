@@ -59,10 +59,13 @@ lifespan(app) — shutdown-фаза (после yield):
 Шаг 1: Клиент отправляет {email, password} (схема UserCreate)
 Шаг 2: FastAPI резолвит Depends:
        get_users_db → get_user_manager
-Шаг 3: UserManager.create(user_create, safe=False)
+Шаг 3: UserManager.create(user_create, safe=True)
        ├─ Валидация email (уникальность)
        ├─ PasswordHelper.hash(password)
        ├─ INSERT INTO users (email, hashed_password, is_active, is_superuser, is_verified)
+       │   # safe=True: поля is_superuser/is_verified из запроса отбрасываются —
+       │   # клиент не может сам себя сделать суперпользователем (safe=False
+       │   # используется только в actions/create_superuser.py)
        └─ COMMIT
 Шаг 4: on_after_register(user):
        ├─ Инвалидация кэша: FastAPICache.clear(namespace="users-list")
@@ -93,6 +96,8 @@ lifespan(app) — shutdown-фаза (после yield):
 Шаг 4: Ответ 200 → UserRead
 ```
 
+> **¹Примечание**: logout в fastapi-users требует валидный токен (`current_user_token`), но **не** проверяет `is_active`/`is_verified` — заблокированный пользователь всё равно может разлогиниться.
+
 ### 3. Верификация email
 
 Двухфазный процесс:
@@ -100,7 +105,8 @@ lifespan(app) — shutdown-фаза (после yield):
 **Фаза A — Запрос токена верификации**:
 ```
 POST /api/v1/auth/request-verify-token (тело: {email})
-  └─ UserManager.verify(token_or_email) → генерация verification_token
+  └─ UserManager.request_verify(user)
+     └─ Генерация verification_token (подписанный JWT с verification_token_secret)
      └─ on_after_request_verify(user, token):
         ├─ verification_link = request.url_for("verify_email") + ?token=...
         └─ BackgroundTask: send_verification_email(user, link)
@@ -185,18 +191,20 @@ GET /api/v1/users
 | GET | `/verify-email/` | Нет | HTML-страница верификации | `views/verification.py` |
 | POST | `/api/v1/auth/register` | Нет | Регистрация | `api/api_v1/auth.py` |
 | POST | `/api/v1/auth/login` | Нет | Вход (cookie) | `api/api_v1/auth.py` |
-| POST | `/api/v1/auth/logout` | `current_active_user` | Выход | `api/api_v1/auth.py` |
-| GET | `/api/v1/auth/request-verify-token` | `current_active_user` | Запрос токена верификации | `api/api_v1/auth.py` |
+| POST | `/api/v1/auth/logout` | `current_user_token`¹ | Выход | `api/api_v1/auth.py` |
+| POST | `/api/v1/auth/request-verify-token` | `current_active_user` | Запрос токена верификации | `api/api_v1/auth.py` |
 | POST | `/api/v1/auth/verify` | Нет | Подтверждение email | `api/api_v1/auth.py` |
 | POST | `/api/v1/auth/forgot-password` | Нет | Запрос сброса пароля | `api/api_v1/auth.py` |
 | POST | `/api/v1/auth/reset-password` | Нет | Сброс пароля | `api/api_v1/auth.py` |
-| GET | `/api/v1/users` | HTTPBearer | Список пользователей (кэш 60s) | `api/api_v1/users.py` |
+| GET | `/api/v1/users` | Нет* | Список пользователей (кэш 60s) | `api/api_v1/users.py` |
 | GET | `/api/v1/users/me` | `current_active_user` | Текущий пользователь | `api/api_v1/users.py` |
 | GET/PATCH/DELETE | `/api/v1/users/{id}` | `current_active_superuser` | Управление пользователем | `api/api_v1/users.py` |
 | GET | `/api/v1/messages` | `current_active_user` | Demo-сообщения | `api/api_v1/messages.py` |
 | GET | `/api/v1/messages/error` | Нет | Demo-эндпоинт ошибки | `api/api_v1/messages.py` |
 | GET | `/api/v1/messages/secrets` | `current_active_superuser` | Demo-секреты | `api/api_v1/messages.py` |
-| GET | `/api/v1/service/stats` | HTTPBearer | Статистика запросов | `api/api_v1/service.py` |
+| GET | `/api/v1/service/stats` | Нет* | Статистика запросов | `api/api_v1/service.py` |
+
+> **\*Примечание про `HTTPBearer`**: на весь роутер `/api/v1` навешена зависимость `http_bearer = HTTPBearer(auto_error=False)` (`api/api_v1/__init__.py`). Она **не выполняет аутентификацию**: `auto_error=False` означает «извлеки заголовок `Authorization`, а если его нет — молча верни `None`». Извлечённый токен нигде не валидируется. Фактический эффект — только кнопка «Authorize» в Swagger UI. Все эндпоинты без явной зависимости (`current_active_user` / `current_active_superuser`) — публичные, включая `GET /users` и `GET /service/stats`.
 
 ### Middleware-стек
 

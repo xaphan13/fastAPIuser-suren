@@ -140,11 +140,24 @@ authentication_backend = AuthenticationBackend(
 Токен передаётся в **HTTP-only cookie**, а не в заголовке `Authorization: Bearer <token>`:
 
 ```python
+```python
 # core/authentication/transport.py
 cookie_transport = CookieTransport(
     cookie_max_age=3600,
     cookie_secure=False,    # TODO: move to settings
 )
+```
+
+Итоговые параметры cookie (явные + дефолты `CookieTransport` из fastapi-users):
+
+| Параметр | Значение | Источник |
+|---|---|---|
+| Имя cookie | `fastapiusersauth` | дефолт библиотеки |
+| `max_age` | 3600 с (1 час) | проект |
+| `httponly` | `True` | дефолт библиотеки |
+| `secure` | `False` | проект (хардкод, TODO в коде) |
+| `samesite` | `lax` | дефолт библиотеки |
+| `path` | `/` | дефолт библиотеки |
 ```
 
 ### Сравнение: opaque-токены (проект) vs JWT
@@ -175,7 +188,7 @@ cookie_transport = CookieTransport(
 
 1. **Каждый запрос → запрос к БД** для валидации токена. Нет кэширования токенов (Redis есть, но для кэша списка пользователей, не токенов).
 2. **`cookie_secure=False`** — cookie передаётся по HTTP. В production **критично** установить `secure=True`, `httponly=True`, `samesite="lax"`.
-3. **Нет CSRF-защиты** — cookie-based auth уязвима к CSRF-атакам на POST-эндпоинты (`/auth/login`, `/auth/logout`, `/auth/register`).
+3. **CSRF-защита частично обеспечена дефолтом `samesite="lax"`** — браузеры не отправляют cookie при cross-site POST-запросах, поэтому классический CSRF на `/auth/login`, `/auth/logout` во многом нейтрализован. Однако это защита браузерная, а не серверная: она не работает в старых браузерах и не защищает GET-эндпоинты с побочными эффектами (их в проекте нет). Для production стоит добавить серверный CSRF-токен (`starlette-csrf` или double-submit-cookie) как независимый слой.
 4. **Нет refresh-токена** — после истечения `lifetime_seconds` (3600 = 1 час) пользователь должен логиниться заново.
 
 ---
