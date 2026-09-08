@@ -1,136 +1,156 @@
-# AGENTS.md — my-fastapi-one (агентный режим)
+# AGENTS.md — fastAPIuser-suren (агентный режим)
 
-Контекст-инструкция для AI-агентов, работающих с кодом в этом репозитории, плюс правила
-команды агентов (раздел «Агентный режим» в конце файла). `QWEN.md` содержит тот же
-проектный контекст и инструкции оркестратора для главной сессии Qwen Code — проектные
-части обоих файлов держите синхронными. Текущее задание команды —
-[tasks/current/REQUIREMENTS.md](tasks/current/REQUIREMENTS.md).
+Контекст-инструкция для AI-агентов, работающих с кодом в этом репозитории, плюс
+правила команды агентов (раздел «Агентный режим» в конце файла). `QWEN.md`
+содержит тот же проектный контекст и инструкции оркестратора для главной сессии
+Qwen Code — проектные части обоих файлов держите синхронными. Текущее задание
+команды — `tasks/current/REQUIREMENTS.md`.
 
 ## Обзор проекта
 
-Учебно-демонстрационный проект на **FastAPI 0.111+ / Python 3.12** — исполняемый каталог
-приёмов, а не продуктовый сервис. Три части:
+Серверное веб-приложение на **FastAPI 0.111+ / Python 3.12** — слоистый монолит
+для подсистемы управления пользователями поверх [`fastapi-users`](https://github.com/fastapi-users/fastapi-users)
+и шаблона [FastAPI-base-app](https://github.com/mahenzon/FastAPI-base-app). Три
+части:
 
-1. **Демонстрационная** (`api/`) — показывает варианты одного и того же решения рядом:
-   девять способов `Depends`, один эндпоинт `/my_items/{item_id}` в четырёх стилях
-   извлечения параметров, два стиля pydantic-полей, два способа валидации.
-2. **Рабочая** (`ex_user_post/`, `ex_order_product/`, `db_core/`) — асинхронный слой
-   данных на SQLAlchemy 2.0 с миграциями Alembic и двумя доменами: `User`/`Post`
-   (one-to-many) и `Order`/`Product` (many-to-many через явную ассоциативную модель).
-3. **Блог** (`md_articles/` + `frontend/`) — React SPA на JSON API `/api/blog`:
-   статьи из YAML-реестра с серверным Markdown-рендером и клиентской подсветкой
-   highlight.js, вход/регистрация/аккаунт (cookie-сессии, bcrypt, аватары),
-   управление реестром, темы сайта/подсветки. Подробности по архитектуре блога —
-   [`docs/11_md_articles.md`](docs/11_md_articles.md) и [`docs/15_md_articles_package.md`](docs/15_md_articles_package.md).
+1. **Аутентификация и пользователи** — `fastapi-users` с cookie-transport и
+   БД-стратегией токенов: регистрация, вход/выход, верификация email, сброс
+   пароля, ролевой доступ (`is_active` / `is_superuser` / `is_verified`).
+2. **Кэш + админка + сервис** — `fastapi-cache2` поверх Redis для списка
+   пользователей; `sqladmin` под `/admin` для `User` и `AccessToken`;
+   `GET /api/v1/service/stats` отдаёт счётчик запросов из middleware.
+3. **HTML и почта** — Jinja2-страницы `/home/` и `/verify-email/` (Bootstrap 5
+   с CDN); email-уведомления через `aiosmtplib` (SMTP → `maildev` локально) с
+   Jinja2-шаблонами писем; исходящий webhook о регистрации через `aiohttp`;
+   входящий webhook `POST /webhooks/user-created` (объявлен в фабрике, роут
+   не зарегистрирован — см. [docs/04_code_quality.md](docs/04_code_quality.md)).
 
-**Дублирование маршрутов и обработчиков в `api/` намеренное** — сравнивать файлы
-построчно и есть учебная цель. Не «рефакторьте» это в общий код, не выяснив задачу.
+Дублирования маршрутов и обработчиков **нет** — проект не учебный, это
+функциональный каркас. Изучать построчно сравнивая — нечего; сравнивать
+есть что с fastapi-users/sqladmin.
 
 **Стек**
 
 | Область | Выбор |
 |---|---|
 | Язык | Python 3.12 (`.python-version`) |
-| Менеджер пакетов | `uv` (`uv.lock` — источник истины) |
+| Менеджер пакетов | `uv` (`uv.lock` — единственный источник истины) |
 | Веб-фреймворк | FastAPI 0.111+ (ORJSONResponse по умолчанию) |
-| Валидация / конфигурация | Pydantic 2 + pydantic-settings (префикс `APP__`, разделитель `__`) |
-| ORM | SQLAlchemy 2.0 async (`asyncpg` / `aiosqlite`) |
-| Миграции | Alembic (асинхронный env.py) |
+| Валидация / конфигурация | Pydantic 2 + pydantic-settings (префикс `APP_CONFIG__`, разделитель `__`) |
+| ORM | SQLAlchemy 2.0 async (`asyncpg`) |
+| Миграции | Alembic (асинхронный `env.py`) |
+| Аутентификация | `fastapi-users[sqlalchemy]` 14.x (cookie-transport, БД-стратегия токенов) |
+| Админка | `sqladmin[full]` (mount `/admin`) |
+| Кэш | `fastapi-cache2` + Redis 8 |
+| Шаблоны | Jinja2 (`jinja_templates.py` → `templates/`) |
+| Email | `aiosmtplib` 4.x (SMTP → `maildev` локально) |
+| Вебхуки (исходящие) | `aiohttp` |
 | ASGI-сервер | uvicorn (dev), gunicorn + UvicornWorker (multi-worker) |
 | Сериализация | orjson |
-| Фронтенд блога | React 18 + TypeScript + Vite + Tailwind CSS v4 (в `frontend/`) |
-| Линтеры | ruff + black (объявлены в зависимостях проекта) |
+| Линтеры | ruff 0.14+ + black 25+ (объявлены в зависимостях) |
 
 **В проекте нет тестов** — изменения проверяются запуском приложения и curl.
 
 ### Архитектура
 
-`fastapi-application/create_fastapi.py` предоставляет фабрику `create_app()` с `lifespan`
-(engine создаётся на импорте, dispose — в shutdown). `main.py` собирает `main_app`,
-подключает три корневых роутера, вызывает `md_articles.include_router_api_frontend(main_app)`
-(сессии, статика `/static`, JSON-роутер блога) и затем `mount_vite_react_assets(main_app)`
-(детали — [`docs/11_md_articles.md`](docs/11_md_articles.md)):
+`fastapi-application/create_fastapi_app.py` — фабрика `create_app(create_custom_static_urls=True)`:
+`lifespan` поднимает Redis-бэкенд и инициализирует `FastAPICache`; `register_static_docs_routes`
+регистрирует кастомные `/docs`/`/redoc` (CDN `unpkg`); `register_middlewares` —
+CORS + `X-Process-Time` + лог-запросов + `requests_count_middleware_dispatch`;
+создаётся `Admin(app, session_maker=db_helper.session_factory)` и подключаются
+view-классы из `admin/`. `main.py` собирает `main_app`, подключает
+`api/__init__.py::router` (prefix `/api`, дальше `/v1/{auth,users,messages,service}`)
+и `views/__init__.py::router` (`/home`, `/verify-email`). Плюс mount
+`/admin` (sqladmin) и вебхук `POST /webhooks/user-created` — он объявлен через
+`webhooks=webhooks_router` в фабрике, но **сам `webhooks_router` в `main.py` не
+включён** (см. [docs/04_code_quality.md](docs/04_code_quality.md)).
 
 | Роутер | Модуль | Префикс | Что внутри |
 |---|---|---|---|
-| `router_api` | `api/__init__.py` | `/api/v1` | `dep_examples/` (9 роутов Depends) + 4 стиля `/my_items/{item_id}` |
-| `r_users_sql` | `ex_user_post/router_users.py` | `/users` | CRUD-слой домена User/Post (2 роута) |
-| `r_order_one` | `ex_order_product/router_order_one.py` | `/orders` | 6 роутов Order: ORM/Core запись, фильтры, сортировка, joinedload |
-| `router_blog_api` | `md_articles/api_blog.py` | `/api/blog` | JSON API блога для React SPA: csrf, current_user, register/login/logout, account (GET/POST), articles, articles/{id}, art_manage + add_all + meta |
+| `router` (api) | `api/__init__.py` | `/api/v1` | `auth/` (login/logout/register/request-verify-token/verify/forgot-password/reset-password), `users/` (список + `/{id}` + `/me`), `messages/` (`/`, `/secrets`, `/error`), `service/` (`/stats`) |
+| `router` (views) | `views/__init__.py` | `/home`, `/verify-email` | Jinja2: `home.html` (информация о пользователе + Verify-кнопка), `verification.html` (страница-обработчик токена) |
+| `webhooks_router` | `api/webhooks/user.py` | `/webhooks/user-created` | **в `main.py` не подключён** — только объявлен в фабрике |
+| `Admin` | `admin/__init__.py` | `/admin` | sqladmin: `UserAdmin` (с хешированием пароля при редактировании), `AccessTokenAdmin` (с автогенерацией токена) |
 
-Итого 41 route-объект: 21 API + служебные `/docs`, `/redoc`, `/openapi.json`,
-`/docs/oauth2-redirect` (кастомные Swagger/ReDoc регистрирует `utils/docs.py`)
-+ 13 JSON-роутов блога + mount `/static` (аватары) + mount `/assets`
-(сборка фронтенда) + SPA catch-all `/{full_path:path}` (отдаёт
-`frontend/dist/index.html`, для `/api*` — 404 JSON). Клиентская часть блога —
-React SPA в `frontend/` (Vite + TypeScript + Tailwind v4, сборка не коммитится).
-
-Проверка счётчика: `cd fastapi-application && ../.venv/bin/python -c "from main import main_app; print(len(main_app.routes))"` → `41`.
-Разбивка: 34 `APIRoute` (21 из `router_api`/`r_users_sql`/`r_order_one` + 13 из `api_blog.py`) + 5 `Route` (4 служебных + SPA catch-all) + 2 `Mount` (`/static` блога, `/assets` SPA).
+Итого **7 route-объектов**: 1 `Route` (`/openapi.json`) + 3 `APIRoute` служебных
+(`/docs`, `/docs/oauth2-redirect`, `/redoc`) + 1 `Mount` (`/admin`) + 2
+`_IncludedRouter` (`/api/v1`, `/home`+`/verify-email`). Проверка счётчика:
+`cd fastapi-application && ../.venv/bin/python -c "from main import main_app; print(len(main_app.routes))"` → `7`.
 
 ```
-my-fastapi-one/                 <- корень репозитория; здесь запускается qwen-code
-├── QWEN.md AGENTS.md README.md  контекст + правила команды (этот комплект)
-├── tasks/                       задания команды: current/ — живое, NNN-<slug>/ — архив (ведёт оркестратор)
-├── .qwen/agents/                субагенты: frontend-dev, backend-dev, qa, adversary
-├── frontend/                    React SPA блога: Vite + TS + Tailwind v4 (dist/ не коммитится)
-├── docs/                        подробная документация по проекту (15 файлов, рус.)
-├── templates_qwen_agents/       комплект агентного режима из другого проекта — ТОЛЬКО пример, не трогать
-├── docker-compose.yml           dev-стек: pg + adminer + pgadmin
-├── nginx_pg_admin.yml           прод-подобный стек: pg + pgadmin + redis + nginx (TLS)
-├── Makefile                     запуск uvicorn, alembic, docker network
-├── pyproject.toml uv.lock       зависимости (uv) + конфиг ruff/black
-└── fastapi-application/         корень Python-приложения (= BASE_DIR)
-    ├── main.py                  main_app + подключение роутеров + mount_vite_react_assets() (SPA-слой в setup_frontend.py)
-    ├── md_articles/setup_frontend.py  mount /assets + SPA catch-all + защита /api* (см. docs/13)
-    ├── main_gunicorn.py         точка входа gunicorn (переиспользует main_app)
-    ├── create_fastapi.py        фабрика create_app() + lifespan (блог подключается в main.py)
-    ├── base_dir_path.py         DIR_CWD / BASE_DIR (Path)
-    ├── config_log.py            ConfigLogger: dictConfig, файл+stdout
-    ├── one.env two.env          профили БД: postgres / sqlite (закоммичены, sqlite активен)
-    ├── core/config.py           Settings: весь конфиг, env_file-профили
-    ├── db_core/                 Base, AsyncDbManager, CurrentSession, типы колонок
-    ├── api/                     демонстрационная часть: dependencies/ + my_routes_dep/
-    ├── ex_user_post/             домен User/Post: router + crud + models + schemas
-    ├── ex_order_product/        домен Order/Product: router + models + schemas
-    ├── md_articles/             блог: api_blog.py (JSON API), schema_art, модели, auth_middleware_helpers
-    ├── content_art/             .md-статьи блога (кладёт пользователь)
-    ├── static/                  profile_pics/ (аватары)
-    ├── alembic/                 асинхронные миграции (3 ревизии)
-    ├── utils/docs.py            кастомные Swagger/ReDoc
-    └── log/                     вывод логов (путь от BASE_DIR)
+fastAPIuser-suren/                          # корень репозитория; здесь запускается qwen-code
+├── QWEN.md AGENTS.md README.md             # контекст + правила команды (этот комплект)
+├── tasks/                                  # задания команды: current/ — живое, NNN-<slug>/ — архив (создаётся по первому заданию)
+├── .qwen/agents/                           # субагенты: spec-writer, frontend-dev, backend-dev, qa, adversary
+├── docs/                                   # подробная документация по проекту (8 файлов, рус.)
+├── docker-compose.yml                      # инфраструктура: pg + redis + maildev
+├── pyproject.toml uv.lock                  # зависимости (uv) + конфиг ruff/black
+│
+└── fastapi-application/                    # корень Python-приложения (= BASE_DIR)
+    ├── main.py                             # main_app: create_app(...) + include_router(api, views)
+    ├── run_main.py                         # точка входа gunicorn (использует main_app)
+    ├── run                                 # python-скрипт → run_main.main()
+    ├── create_fastapi_app.py               # фабрика create_app(): lifespan, middleware, admin, docs
+    ├── errors_handlers.py                  # глобальные хендлеры ValidationError / DatabaseError
+    ├── jinja_templates.py                  # singleton Jinja2Templates(directory=BASE_DIR/templates)
+    ├── .env.template                       # шаблон APP_CONFIG__* (закоммичен, без секретов)
+    ├── alembic.ini                         # конфиг Alembic
+    │
+    ├── core/                               # конфиг, модели, схемы, типы, аутентификация, gunicorn
+    │   ├── config.py                       # Settings (pydantic-settings), BASE_DIR
+    │   ├── models/                         # Base, db_helper, User, AccessToken, mixins
+    │   ├── schemas/user.py                 # UserRead, UserCreate, UserUpdate, UserRegisteredNotification
+    │   ├── types/user_id.py                # UserIdType = int
+    │   ├── authentication/                 # FastAPIUsers, UserManager, transport
+    │   └── gunicorn/                       # Application, get_app_options, GunicornLogger
+    │
+    ├── api/                                # JSON API + зависимости
+    │   ├── api_v1/                         # auth, users, messages, service
+    │   ├── dependencies/authentication/    # backend, strategy, users, access_tokens, user_manager
+    │   └── webhooks/user.py                # POST /webhooks/user-created (НЕ подключён в main)
+    │
+    ├── actions/                            # CLI-скрипты
+    │   └── create_superuser.py             # python -m actions.create_superuser
+    │
+    ├── admin/                              # sqladmin: User, AccessToken, converter (TIMESTAMPAware)
+    │
+    ├── middlewares/                        # CORS, X-Process-Time, log, requests_count
+    │
+    ├── views/                              # Jinja2 views (home, verify-email)
+    │
+    ├── mailing/                            # aiosmtplib: send_email, send_verification_email, send_email_confirmed
+    │
+    ├── templates/                          # Jinja2: base.html, home.html, verification.html + mailing/
+    │
+    ├── utils/                              # case_converter (camelCase→snake_case), webhooks/user (исходящий)
+    │
+    └── alembic/                            # асинхронные миграции (2 ревизии: users, access_tokens)
 ```
 
 ## Документация
 
-В папке [`docs/`](docs/) лежит подробная документация по проекту (на русском) —
-обращайтесь к ней, прежде чем блуждать по исходникам:
+В папке [docs/](docs/) — подробная документация (на русском). Сверяйтесь с ней
+перед правками:
 
 | Файл | Что внутри |
 |---|---|
-| [`docs/01_project_structure.md`](docs/01_project_structure.md) | карта проекта: дерево, зависимости, инварианты окружения |
-| [`docs/02_architecture.md`](docs/02_architecture.md) | архитектура и слои, потоки данных, развёртывание |
-| [`docs/03_execution_flow.md`](docs/03_execution_flow.md) | жизненный цикл, маршруты, ключевые процессы, логирование |
-| [`docs/04_code_quality.md`](docs/04_code_quality.md) | оценка качества кодовой базы, дефекты по критичности |
-| [`docs/05_patterns_di.md`](docs/05_patterns_di.md) | обучающий разбор: 9 паттернов внедрения зависимостей |
-| [`docs/06_patterns_parameters.md`](docs/06_patterns_parameters.md) | обучающий разбор: 4 стиля извлечения параметров, pydantic |
-| [`docs/07_patterns_data_layer.md`](docs/07_patterns_data_layer.md) | обучающий разбор: 11 паттернов async-слоя данных |
-| [`docs/08_ideas_di_api.md`](docs/08_ideas_di_api.md) | идеи развития: DI и API-слой |
-| [`docs/09_ideas_data_layer.md`](docs/09_ideas_data_layer.md) | идеи развития: слой данных |
-| [`docs/10_ideas_testing_infra.md`](docs/10_ideas_testing_infra.md) | идеи развития: тесты, конфигурация, инфраструктура |
-| [`docs/11_md_articles.md`](docs/11_md_articles.md) | блог md_articles: архитектура, маршруты, JSON API для React SPA |
-| [`docs/12_fastapi_react_integration.md`](docs/12_fastapi_react_integration.md) | связка FastAPI + React: способы организации фронтенда, dev vs прод |
-| [`docs/13_frontend_spa_module.md`](docs/13_frontend_spa_module.md) | модуль `setup_frontend.py`: как код подключает собранный React, dev-режим без `dist/` |
-| [`docs/14_create_fastapi_factory.md`](docs/14_create_fastapi_factory.md) | фабрика `create_app()` и `lifespan` в `create_fastapi.py`: каркас vs наполнение |
-| [`docs/15_md_articles_package.md`](docs/15_md_articles_package.md) | пакет `md_articles`: JSON API блога, реестр статей, сессии |
+| [docs/01_project_structure.md](docs/01_project_structure.md) | карта проекта: дерево, зависимости, инварианты окружения |
+| [docs/02_architecture.md](docs/02_architecture.md) | архитектура и слои, потоки данных, развёртывание |
+| [docs/03_execution_flow.md](docs/03_execution_flow.md) | жизненный цикл, маршруты, ключевые процессы, логирование |
+| [docs/04_code_quality.md](docs/04_code_quality.md) | оценка качества кодовой базы, дефекты по критичности |
+| [docs/05_optimization_roadmap.md](docs/05_optimization_roadmap.md) | дорожная карта оптимизаций (из анализа качества) |
+| [docs/06_frontend_bootstrap_analysis.md](docs/06_frontend_bootstrap_analysis.md) | анализ клиентского слоя (Jinja2 + Bootstrap, без SPA) |
+| [docs/07_authorization_report.md](docs/07_authorization_report.md) | отчёт по авторизации: модель, потоки, грабли |
+| [docs/08_authentication_guide.md](docs/08_authentication_guide.md) | пошаговое руководство по аутентификации через fastapi-users |
 
 ## Индекс кодовой базы
 
-Для структурных запросов по коду (кто вызывает функцию, что она вызывает, мёртвый код,
-анализ влияния изменений) используйте графовый индекс через **codebase-memory-mcp** —
-это быстрее и точнее, чем обход исходников вручную. Скилл `codebase-memory` описывает
-доступные MCP-инструменты (`search_graph`, `trace_path`, `detect_changes` и др.).
-Перед структурным исследованием проверяйте наличие/свежесть индекса через `index_status`.
+Для структурных запросов по коду (кто вызывает функцию, что она вызывает,
+мёртвый код, анализ влияния изменений) используйте графовый индекс через
+**codebase-memory-mcp** — это быстрее и точнее, чем обход исходников вручную.
+Скилл `codebase-memory` описывает доступные MCP-инструменты (`search_graph`,
+`trace_path`, `detect_changes` и др.). Перед структурным исследованием
+проверяйте наличие/свежесть индекса через `index_status`.
 
 ## Сборка и запуск
 
@@ -138,36 +158,35 @@ my-fastapi-one/                 <- корень репозитория; здес
 
 ```bash
 uv sync                      # создаёт .venv по uv.lock
+docker compose up -d         # pg + redis + maildev
 ```
 
-Профиль БД выбирается в `fastapi-application/core/config.py` (`env_file` класса
-`Settings`): активен `dev_sqlite.env` — SQLite (`sqlite+aiosqlite:///./one_simple.db`), внешняя
-БД не нужна. PostgreSQL (`prod_db.env`, `postgresql+asyncpg://user:password@localhost:5432/shop`)
-включается раскомментированием строки; `.env` перекрывает оба профиля. Docker-стек для
-PostgreSQL: `docker compose up -d` (pg на `5432`, adminer `8080`, pgadmin `5050`).
+`.env` создаётся вручную рядом с `.env.template` (в `fastapi-application/`).
+Обязательные поля: `APP_CONFIG__DB__URL` (по умолчанию из шаблона),
+`APP_CONFIG__ACCESS_TOKEN__RESET_PASSWORD_TOKEN_SECRET`,
+`APP_CONFIG__ACCESS_TOKEN__VERIFICATION_TOKEN_SECRET`.
 
 ### Локальный запуск
 
 ```bash
 cd fastapi-application
-../.venv/bin/uvicorn main:main_app --host 0.0.0.0 --port 8000 --reload    # предпочтительно
-../.venv/bin/python main.py                                               # то же + баннер в лог
-# из корня проекта: make run_app11_lin  (uvicorn --app-dir fastapi-application)
+../.venv/bin/alembic upgrade heads            # миграции (cwd обязателен)
+../.venv/bin/uvicorn main:main_app --host 0.0.0.0 --port 8000 --reload   # dev (предпочтительно)
+../.venv/bin/python main.py                  # dev + баннер в лог
+../.venv/bin/python run                      # gunicorn (прод; см. run_main.py)
+../.venv/bin/python -m actions.create_superuser   # CLI: суперюзер
 ```
 
-**cwd имеет значение**: файл SQLite `./one_simple.db` резолвится относительно рабочего
-каталога — запуск из корня через `--app-dir` создаст базу в корне, а не в
-`fastapi-application/`. Логи всегда в `fastapi-application/log/` (привязка к `BASE_DIR`).
-Предпочтителен запуск из `fastapi-application/`.
+**Плоские импорты.** Приложение не устанавливается как пакет
+(`pyproject.toml`: `package = false`). Все импорты `from core.config import …`
+работают только если `fastapi-application/` — текущий каталог. `BASE_DIR` в
+`core/config.py` всегда указывает на `fastapi-application/`, поэтому лог-файл
+и `.env.template` он найдёт независимо от cwd; но **Alembic требует cwd =
+`fastapi-application/`** — иначе `from core.config import settings` в
+`alembic/env.py` не найдёт модуль.
 
-Multi-worker: `gunicorn main:main_app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000` (из `fastapi-application/`; сборка — `main_gunicorn.py`).
-
-Alembic (требует cwd = `fastapi-application/`):
-
-```bash
-cd fastapi-application && ../.venv/bin/alembic upgrade heads
-../.venv/bin/alembic revision --autogenerate
-```
+Multi-worker (gunicorn): `python run` запускает `run_main.py::main()`, который
+читает `settings.gunicorn.{host,port,timeout,workers,log_level}`.
 
 ### Линтеры и форматирование
 
@@ -176,38 +195,44 @@ uv run ruff check .
 uv run ruff format .     # либо: uv run black .
 ```
 
-Ruff и black объявлены в зависимостях проекта — отдельная установка не нужна.
+ruff игнорирует `F401` (неиспользуемые импорты), `E402` (импорт не в начале
+файла) и `F541` (f-строка без подстановок) — эти исключения заданы в
+`pyproject.toml` и несут смысловую нагрузку: код осознанно импортирует
+`UserManager` через `TYPE_CHECKING` и `core/__init__.py` реэкспортирует имена
+(`Base`, `db_helper`, `User`, `AccessToken`). Не «исправляйте» их.
+
+Длина строки в `pyproject.toml`: ruff 120, black 120; отступ 4 пробела.
 
 ### Проверка работоспособности
 
 Тестов нет, поэтому изменения проверяются запуском самого приложения:
 
 ```bash
-cd fastapi-application && ../.venv/bin/python -c "from main import main_app; print(len(main_app.routes))"   # ожидается 40
+cd fastapi-application && ../.venv/bin/python -c "from main import main_app; print(len(main_app.routes))"   # ожидается 7
 ../.venv/bin/uvicorn main:main_app --port 8000    # затем curl:
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/docs
-curl -s http://127.0.0.1:8000/api/v1/dep_examples/single-direct-dependency
-curl -s http://127.0.0.1:8000/users/get_all_users
-curl -s http://127.0.0.1:8000/api/blog/articles          # JSON API блога
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/   # SPA (нужен frontend/dist: cd frontend && npm run build)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/admin/login
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
+     -H "Content-Type: application/json" \
+     -d '{"email":"u@example.com","password":"strongpass","is_active":true,"is_superuser":false,"is_verified":false}'
+curl -s http://127.0.0.1:8000/api/v1/service/stats
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/home/   # 401 без cookie, 200 c активным пользователем
 ```
 
-Не утверждайте, что изменение проверено, без фактического запуска. Если проверить
-невозможно — сообщите об этом прямо.
+Не утверждайте, что изменение проверено, без фактического запуска. Если
+проверить невозможно — сообщите об этом прямо.
 
 ## Соглашения разработки
 
 ### Стиль кода
 
-- Длина строки: **ruff 100**, black 120; отступ 4 пробела (`pyproject.toml`).
-- Ruff намеренно игнорирует `F401` (неиспользуемые импорты), `E402` (импорты не в начале
-  файла) и `F541` (f-строка без подстановок). Эти исключения несут смысловую нагрузку:
-  код осознанно импортирует логгер раньше остальных модулей и реэкспортирует имена
-  (`db_core/__init__.py`). Не «исправляйте» их.
-- Крупные декоративные комментарии-разделители (`# ====`, `# ----`, `#***`) разделяют
-  логические секции. Соблюдайте локальный стиль файла при правках, не удаляйте их.
-- Русский язык используется для комментариев, docstring'ов и документации. Новый текст
-  и комментарии пишите на том же языке, что и окружающий файл.
+- Длина строки: **ruff 120**, black 120; отступ 4 пробела (`pyproject.toml`).
+- ruff игнорирует `F401`, `E402`, `F541` (см. выше). Не «исправляйте».
+- Крупные декоративные комментарии-разделители (`# ====`, `# ----`, `#***`)
+  разделяют логические секции. Соблюдайте локальный стиль файла при правках,
+  не удаляйте их.
+- Русский язык используется для комментариев, docstring'ов и документации.
+  Новый текст и комментарии пишите на том же языке, что и окружающий файл.
 
 ### Паттерн модуля роутера
 
@@ -217,253 +242,255 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/   # SPA (нуж�
   = `fastapi-application/`, где эти модули лежат в корне `sys.path`.
 - Объект `APIRouter` объявляется на уровне модуля с `prefix=settings.api...` и
   `tags=[...]`; включение вложенных роутеров — в `__init__.py` своей папки.
-- Сессия БД — только через DI-алиас `CurrentSession`
-  (`Annotated[AsyncSession, Depends(db_manager.get_async_session)]` из `db_core/db_async.py`).
-- Логирование — через `logF` из `config_log.py` (файл+stdout); в демонстрационных
-  роутах допустимы подробные `logF.info` с составами данных.
+- Сессия БД — через `db_helper.session_getter` (DI через
+  `Depends(db_helper.session_getter)` в `api/dependencies/authentication/{users,access_tokens}.py`).
+- Логирование — стандартный `logging` (имя логгера = `__name__`,
+  `logging.basicConfig` настраивается в `main.py` по `settings.logging`).
 
 ### Конфигурация
 
-- Весь конфиг — вложенные pydantic-модели в `core/config.py`, читаются из env-файлов
-  с префиксом `APP__` и разделителем `__` (`APP__DB__URL`, `APP__RUN__PORT`).
-  Единственное обязательное поле — `db.url`.
-- Переключение профиля БД — правка списка `env_file` в `core/config.py`
-  (раскомментировать `prod_db.env`), **не** переменная окружения.
-- Новые настройки добавляйте как поля соответствующей вложенной модели с дефолтом,
-  а не читайте `os.environ` напрямую.
+- Весь конфиг — вложенные pydantic-модели в `core/config.py`, читаются из
+  env-файлов с префиксом `APP_CONFIG__` и разделителем `__`. Обязательные
+  поля: `db.url`, `access_token.reset_password_token_secret`,
+  `access_token.verification_token_secret`.
+- **Один источник истины для секретов токенов**: переменные
+  `APP_CONFIG__ACCESS_TOKEN__RESET_PASSWORD_TOKEN_SECRET` и
+  `APP_CONFIG__ACCESS_TOKEN__VERIFICATION_TOKEN_SECRET` объявлены обязательными
+  в `core/config.py::AccessToken`. Если они не заданы — приложение не стартует
+  на импорте `main`. Захардкоженный fallback запрещён.
+- Новые настройки добавляйте как поля соответствующей вложенной модели с
+  дефолтом, а не читайте `os.environ` напрямую.
 
 ### Модели и схемы
 
-- SQLAlchemy 2.0-стиль: `Mapped[]` + `mapped_column`, переиспользуемые `Annotated`-типы
-  из `db_core/type_for_models.py` (`int_primary_key`, `str_len_100` и др.).
-- `__tablename__` генерируется автоматически (`CamelCase` → `snake_case`,
-  `db_core/model_base.py`); переопределяйте только при необходимости
-  (как `OrderProductAssociation`).
-- Новые модели обязательно реэкспортируйте в `db_core/__init__.py` — именно этот импорт
-  наполняет `Base.metadata` для Alembic `--autogenerate`. Модели вне реэкспорта
-  (например `TestUser`) миграциям невидимы.
-- Pydantic-схемы — рядом с доменом (`schemas/` или `schema_*.py`), имена
-  `XxxCreate`/`XxxResp`; сериализация FastAPI — `response_model` в декораторе.
+- SQLAlchemy 2.0-стиль: `Mapped[]` + `mapped_column`, общий `Base`
+  (`core/models/base.py`) с auto-tablename (`camelCase → snake_case` +
+  суффикс `s`).
+- `IdIntPkMixin` (`core/models/mixins/id_int_pk.py`) — общий авто-PK
+  `id INTEGER`. Используется в `User` и `AccessToken` (там PK — `token`, а
+  `id` нет вообще).
+- Все модели обязательно реэкспортируются в `core/models/__init__.py`:
+  `Base`, `db_helper`, `User`, `AccessToken`. Именно этот импорт наполняет
+  `Base.metadata` для Alembic `--autogenerate`.
+- Pydantic-схемы — `core/schemas/user.py` (рядом с `core/models/`):
+  `UserRead`, `UserCreate`, `UserUpdate` (наследники
+  `fastapi_users.schemas.BaseUser*`), плюс `UserRegisteredNotification` для
+  вебхука.
+
+### Аутентификация
+
+- `fastapi-users[sqlalchemy]` настраивается в два слоя:
+  - ядро (`core/authentication/`): `FastAPIUsers[User, UserIdType]`,
+    `UserManager` с хуками `on_after_register` / `on_after_request_verify` /
+    `on_after_verify` / `on_after_forgot_password`, `transport.py` (cookie
+    активно, bearer закомментирован).
+  - зависимости (`api/dependencies/authentication/`): `authentication_backend`,
+    `get_database_strategy`, `get_users_db`, `get_access_tokens_db`,
+    `get_user_manager` — каждая через `Depends(db_helper.session_getter)`.
+- `current_active_user`, `current_active_superuser` — алиасы из
+  `core/authentication/fastapi_users.py`.
+- Cookie-transport: `cookie_max_age=3600` (1 час, **захардкожено** в
+  `core/authentication/transport.py` — TODO: перенести в `Settings`),
+  `cookie_secure=False` (для dev). См. [docs/04_code_quality.md](docs/04_code_quality.md).
+- Email-уведомления идут через `BackgroundTasks.add_task` в хуках
+  `UserManager` (`send_verification_email`, `send_email_confirmed`,
+  `FastAPICache.clear`, `send_new_user_notification`).
 
 ## Грабли — сверьтесь с этим списком перед отладкой
 
 ### Запуск и окружение
 
-- **cwd-зависимость SQLite.** `sqlite+aiosqlite:///./one_simple.db` резолвится от
-  рабочего каталога процесса: запуск из корня (`make run_app11_lin`, `--app-dir`)
-  создаст базу в корне проекта, а не в `fastapi-application/`. Данные «пропали» после
-  смены способа запуска — проверьте, где лежит `*.db`.
-- **Побочные эффекты на импорте.** `config_log` создаёт каталог `fastapi-application/log/`
-  и настраивает логгеры в момент импорта; `db_manager` (engine) создаётся на импорте
-  `db_core/db_async.py`. Это значит: импорт `main` уже поднимает логи и требует
-  валидного `APP__DB__URL`; подменить сессию в тестах можно только через
-  `app.dependency_overrides`.
-- **Alembic требует cwd = `fastapi-application/`** (там `alembic.ini` и плоские импорты
-  `db_core`/`core.config` в `env.py`). Цели Makefile `migr_gener`/`migr_to_base`
-  используют устаревший путь `venv/bin/alembic` — фактический интерпретатор в `.venv/`.
-- **Профиль БД переключается правкой кода** (`core/config.py`, `env_file`), env-файлы
-  `prod_db.env`/`dev_sqlite.env` закоммичены намеренно (учебный проект, секретов нет).
+- **Плоские импорты.** `from core.config import settings` работает только
+  если `fastapi-application/` в `sys.path` (cwd или `--app-dir`). Иначе —
+  `ModuleNotFoundError`. Alembic и uvicorn должны запускаться из
+  `fastapi-application/`.
+- **Побочные эффекты на импорте.** `main.py` при импорте:
+  (1) поднимает `logging.basicConfig` по `settings.logging`;
+  (2) импортирует `from api import router` (тот импортирует `core.config`);
+  (3) вызывает `create_app(...)` — создаёт SQLAlchemy-движок, Admin, Redis-клиент
+  в `lifespan`. Любой сбой конфигурации (например, отсутствие
+  `APP_CONFIG__ACCESS_TOKEN__VERIFICATION_TOKEN_SECRET`) ловится здесь же.
+- **Секреты токенов обязательны.** Без `RESET_PASSWORD_TOKEN_SECRET` и
+  `VERIFICATION_TOKEN_SECRET` в `.env` приложение не стартует. Это сделано
+  намеренно: захардкоженный fallback в проде — дыра.
+- **Cookie `secure=False`.** `core/authentication/transport.py` жёстко задаёт
+  `cookie_secure=False` — для прода нужно поднять до `True` за reverse-proxy
+  с TLS, иначе токены уходят по HTTP. См. [docs/04_code_quality.md](docs/04_code_quality.md).
 
 ### Известные дефекты (из docs/04_code_quality.md) — не «исправляйте» без отдельного задания
 
-- `GET /api/v1/depends_function_annotated/my_items/{item_id}` без query-параметра
-  `param_id` возвращает **500** (`validate_query_safe` сравнивает `1 <= None` →
-  `TypeError`). Сравните с корректной реализацией в `pydantic_validator.py`
-  (`RespAfterValid`, `Field(ge=1, le=1000)`).
-- Дублирующийся `nickname` в `POST /users/create_user` даёт **500** (`IntegrityError`)
-  вместо 409 — нет перехвата исключения целостности.
-- `UserResp` наследует поле `password` от `UserCreate` (утечка в ответе).
-- `ex_user_post/models/model_user_mix.py::TestUser` не реэкспортирован в
-  `db_core/__init__.py` — невидим для Alembic (намеренная демонстрация примеси).
+- Входящий webhook `POST /webhooks/user-created` объявлен в фабрике через
+  `webhooks=webhooks_router`, но `webhooks_router` в `main.py` не подключён —
+  эндпоинт не отвечает.
+- `cookie_secure=False` и `cookie_max_age=3600` захардкожены в
+  `core/authentication/transport.py`, минуя `Settings`.
+- `utils/case_converter.py` импортируется как `from utils import camel_case_to_snake_case`
+  в `core/models/base.py` — создаёт циклический риск: при импорте модели
+  подтягивается `utils`, при импорте `utils` (внутри пайплайна) подтягивается
+  вся `core/models`. Сейчас работает, но хрупко.
+- `core/authentication/transport.py` экспортирует и `bearer_transport`, и
+  `cookie_transport`, но активен только cookie; `bearer_transport` — мёртвый
+  код на случай переключения.
+- `CookieTransport.cookie_name` не задан — берётся дефолт `"fastapiusersauth"`.
+  Для прода стоит зафиксировать имя.
 
 ### Docker
 
-- `docker-compose.yml` — dev-стек (pg `5432` + adminer `8080` + pgadmin `5050`),
-  креды захардкожены (`user/password`, база `shop`) — учебный проект.
-- `nginx_pg_admin.yml` — прод-подобный стек: требует внешний сеть `app_net_new`
-  (`make create-net`), `.env` рядом с compose (`DB_USER`, `DB_PASSWORD`, `DB_NAME`,
-  `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`) и сертификаты в `nginx/cert/` (не в git);
-  `nginx.conf` ссылается на `xaphan.ru`.
-- Приложение само в compose не входит — запускается локально/gunicorn и проксируется
-  через nginx.
+- `docker-compose.yml` — инфраструктура (pg 5432 + redis 6379 + maildev 1025/1080),
+  креды `user/password`, база `shop` — учебный проект, секреты закоммичены.
+- Приложение само в compose не входит — запускается локально/gunicorn и
+  подключается к этим сервисам по `localhost`. Для внешнего HTTP нужен свой
+  reverse-proxy (nginx/caddy) — в репо его нет.
 
 ## Git
 
-Ветка на момент написания: `new_agents_mode`. Заголовки коммитов короткие и в нижнем
-регистре (`new agents files templates`, `update docs`, `pattern code and new idea`).
-Держитесь той же лаконичности. Учтите, что `log/`, `*.db`, `*.log`, `pg_db/`, серты
-nginx находятся в `.gitignore` — никогда не добавляйте их. Индексируйте только файлы,
-относящиеся к изменению. `adminGit.sh` — CLI-обёртка над git, `adminDock.sh` — над docker.
+Ветка на момент написания: `new-docs`. Заголовки коммитов короткие и в нижнем
+регистре (`rename project`, `ruff format and check`, `added new docs`,
+`first start agents mode`). Держитесь той же лаконичности. Учтите, что
+`__pycache__/`, `*.py[cod]`, `*.log`, `uv.lock` (несмотря на `uv.lock` в
+зависимостях — он в `.gitignore`!), `.venv/`, `.env`, `.idea/`, `.vscode/`,
+`logs/` находятся в `.gitignore` — никогда не добавляйте их. Индексируйте
+только файлы, относящиеся к изменению.
+
+> В репо **нет** `Makefile`, `nginx_pg_admin.yml`, `frontend/`, `md_articles/`,
+> `static/`, `db_core/`, `ex_user_post/`, `ex_order_product/`, `tasks/` —
+> всё это из предыдущего проекта-шаблона. Не добавляйте упоминания этих путей
+> в новый код или доки. Если задание требует, например, статики — обсудите
+> с оркестратором.
 
 ---
 
 ## Агентный режим
 
 Эти правила применяются к каждому агенту команды, работающему над заданием из
-[tasks/current/REQUIREMENTS.md](tasks/current/REQUIREMENTS.md). Оркестратор — главная сессия Qwen Code (инструкции
-в `QWEN.md`). При сомнениях главенствует текущее задание, затем проектные соглашения
-выше.
+`tasks/current/REQUIREMENTS.md`. Оркестратор — главная сессия Qwen Code
+(инструкции в [QWEN.md](QWEN.md)). При сомнениях главенствует текущее
+задание, затем проектные соглашения выше.
 
 ### Жизненный цикл заданий
 
-- Текущее задание живёт в `tasks/current/REQUIREMENTS.md`; в корне проекта файлов
-  заданий нет. Все рабочие артефакты живого задания создаются в той же папке
-  `tasks/current/`: `DEFECTS.md` (если qa найдёт дефекты), `ADVERSARIAL_REVIEW.md`,
-  `e2e/`, `screenshots/`, `dev/` (прогресс-файлы и сырые выводы разработчиков).
-- У задания две фазы жизни: **создание** и **исполнение**. Создание: оркестратор
-  запускает скилл `task-spec` и субагента spec-writer — сырая идея пользователя
-  превращается в полный REQUIREMENTS.md с планом фаз (шаблон —
-  `.qwen/skills/task-spec/TEMPLATE.md`); открытые вопросы закрываются с пользователем,
-  план фаз подтверждается, спека замораживается. Исполнение: строго по фазам из
-  этого плана — фаза = одно делегирование = 1–3 файла = бюджет ~10–15 ходов;
-  следующая фаза стартует только после зелёного checkpoint и ревью диффа
-  оркестратором. Детали — в скилле `task-spec` и в QWEN.md.
-- Упавший прогон не возобновляют пересказом истории. Сначала проверить, что процесс
-  не остался (`pgrep -af "uvicorn.*main:main_app"`) и мусора нет; затем прочитать
-  `tasks/current/dev/phaseNN_progress.md` и `git diff`; затем запустить свежий узкий
-  прогон «фаза N: сделано X, доделай Y». Это касается и backend-dev, и frontend-dev.
+- Текущее задание живёт в `tasks/current/REQUIREMENTS.md`; в корне проекта
+  файлов заданий нет. Все рабочие артефакты живого задания создаются в той
+  же папке `tasks/current/`: `DEFECTS.md` (если qa найдёт дефекты),
+  `ADVERSARIAL_REVIEW.md`, `e2e/`, `screenshots/`, `dev/` (прогресс-файлы
+  и сырые выводы разработчиков).
+- Папки `tasks/` в репо ещё нет — она появляется, когда пользователь кладёт
+  первое задание. До этого оркестратор работает по QWEN.md, но `tasks/current/`
+  не существует.
+- У задания две фазы жизни: **создание** и **исполнение**. Создание:
+  оркестратор запускает скилл `task-spec` и субагента `spec-writer` — сырая
+  идея пользователя превращается в полный REQUIREMENTS.md с планом фаз
+  (шаблон — `.qwen/skills/task-spec/TEMPLATE.md`); открытые вопросы
+  закрываются с пользователем, план фаз подтверждается, спека замораживается.
+  Исполнение: строго по фазам из этого плана — фаза = одно делегирование =
+  1–3 файла = бюджет ~10–15 ходов; следующая фаза стартует только после
+  зелёного checkpoint и ревью диффа оркестратором. Детали — в скилле
+  `task-spec` и в QWEN.md.
+- Упавший прогон не возобновляют пересказом истории. Сначала проверить, что
+  процесс не остался (`pgrep -af "uvicorn.*main:main_app"`) и мусора нет;
+  затем прочитать `tasks/current/dev/phaseNN_progress.md` и `git diff`; затем
+  запустить свежий узкий прогон «фаза N: сделано X, доделай Y». Это касается
+  и backend-dev, и frontend-dev.
 - Когда все критерии успеха подтверждены, оркестратор архивирует задание:
-  переименовывает папку `tasks/current/` в `tasks/NNN-<slug>/` (`NNN` — следующий
-  порядковый номер от 001, `<slug>` — короткое латинское имя через дефис) — так все
-  артефакты переезжают в архив вместе с заданием; в `tasks/NNN-<slug>/REQUIREMENTS.md`
-  убирает пометку «Текущее задание» и дописывает в конец секцию «Отчёт о выполнении»:
-  дата закрытия, итог, изменения, таблица критериев с результатами и ссылками на
-  доказательства, дефекты, disposition находок adversary, участники. Шаблон отчёта —
-  в QWEN.md. Затем создаёт свежую заглушку `tasks/current/REQUIREMENTS.md`
-  «Задания нет», в которую пользователь кладёт новое задание, и цикл повторяется
-  тем же составом команды.
-- Закрытые задания лежат в `tasks/NNN-<slug>/` — целиком, со всеми артефактами
-  (задание + отчёт, ADVERSARIAL_REVIEW.md, DEFECTS.md, e2e/, screenshots/); пишет
-  туда только оркестратор.
-- Комплект агентного режима переносим: чтобы использовать его в другом проекте,
-  достаточно адаптировать проектный контекст в `README.md`, `QWEN.md`, `AGENTS.md`
-  и папку `.qwen/`; `tasks/current/REQUIREMENTS.md` каждый раз получает новое
-  задание, архив `tasks/` начинается пустым. `templates_qwen_agents/` — исходный
-  пример комплекта из другого проекта, только для образца.
+  переименовывает папку `tasks/current/` в `tasks/NNN-<slug>/` (`NNN` —
+  следующий порядковый номер от 001, `<slug>` — короткое латинское имя через
+  дефис) — так все артефакты переезжают в архив вместе с заданием; в
+  `tasks/NNN-<slug>/REQUIREMENTS.md` убирает пометку «Текущее задание» и
+  дописывает в конец секцию «Отчёт о выполнении»: дата закрытия, итог,
+  изменения, таблица критериев с результатами и ссылками на доказательства,
+  дефекты, disposition находок adversary, участники. Шаблон отчёта — в
+  QWEN.md. Затем создаёт свежую заглушку `tasks/current/REQUIREMENTS.md`
+  «Задания нет», в которую пользователь кладёт новое задание, и цикл
+  повторяется тем же составом команды.
+- Закрытые задания лежат в `tasks/NNN-<slug>/` — целиком, со всеми
+  артефактами (задание + отчёт, ADVERSARIAL_REVIEW.md, DEFECTS.md, e2e/,
+  screenshots/); пишет туда только оркестратор.
+- Комплект агентного режима переносим: чтобы использовать его в другом
+  проекте, достаточно адаптировать проектный контекст в `README.md`,
+  `QWEN.md`, `AGENTS.md` и папку `.qwen/`; `tasks/current/REQUIREMENTS.md`
+  каждый раз получает новое задание, архив `tasks/` начинается пустым.
 
 ### Команда
 
-- **оркестратор** (главная сессия, `QWEN.md`) — планирует, делегирует, ревьюит,
-  контролирует критерии успеха. Код не пишет.
-- **spec-writer** — отдельная сессия фазы создания задания: исследует зону будущего
-  задания и пишет `tasks/current/REQUIREMENTS.md` с планом фаз (запускается
-  оркестратором через скилл `task-spec`). Код не пишет.
-- **frontend-dev** — UI-слой проекта. В этом проекте это статические страницы
-  `nginx/web/` и разметка ошибок nginx; основная работа — у backend-dev.
-- **backend-dev** — серверная часть: роуты, схемы, модели, CRUD, конфигурация,
-  миграции.
-- **qa** — проверки запуском и curl-сценариями, заметки e2e, реестр DEFECTS.md. Код
-  продукта не исправляет.
-- **adversary** — пытается сломать изменённую функциональность нешаблонными способами;
-  записывает находки в ADVERSARIAL_REVIEW.md.
+- **оркестратор** (главная сессия, `QWEN.md`) — планирует, делегирует,
+  ревьюит, контролирует критерии успеха. Код не пишет.
+- **spec-writer** — отдельная сессия фазы создания задания: исследует зону
+  будущего задания и пишет `tasks/current/REQUIREMENTS.md` с планом фаз
+  (запускается оркестратором через скилл `task-spec`). Код не пишет.
+- **frontend-dev** — клиентский слой. В этом проекте это Jinja2-шаблоны
+  (`templates/`, `templates/mailing/`) и встроенный JS на
+  `home.html`/`verification.html` (fetch на `/api/v1/auth/...`). Настоящего
+  SPA-фронтенда нет.
+- **backend-dev** — серверная часть: роуты, схемы, модели, CRUD,
+  конфигурация, миграции, sqladmin, mailing, webhooks, middleware.
+- **qa** — проверки запуском и curl-сценариями, заметки e2e, реестр
+  DEFECTS.md. Код продукта не исправляет.
+- **adversary** — пытается сломать изменённую функциональность нешаблонными
+  способами; записывает находки в ADVERSARIAL_REVIEW.md.
 
-Определения агентов в `.qwen/agents/` универсальны и переносятся между проектами без
-правок: каждый агент первым шагом читает AGENTS.md и привязывается к проекту таблицей
-ниже. При переносе агентного режима в другой проект меняется только эта таблица.
+Определения агентов в `.qwen/agents/` универсальны и переносятся между
+проектами без правок: каждый агент первым шагом читает AGENTS.md и
+привязывается к проекту таблицей ниже. При переносе агентного режима в
+другой проект меняется только эта таблица.
 
 ### Зоны и проверки (привязка к этому проекту)
 
 | Агент | Зона (можно редактировать) | Чем проверяет изменения | Особые запреты |
 |---|---|---|---|
-| frontend-dev | `frontend/` (React SPA: источники, Vite-конфиги, сборка), `nginx/web/` (если появится в задании) | `cd frontend && npm run build` без ошибок; просмотр страницы; скриншот в `tasks/current/screenshots/` | Python-модули `fastapi-application/` — зона backend-dev; `frontend/dist` не коммитится |
-| backend-dev | Python-модули `fastapi-application/` (включая `alembic/`, env-профили, `md_articles/` с JSON API `api_blog.py`) | `uv run ruff check .`; `cd fastapi-application && ../.venv/bin/python -c "from main import main_app; print(len(main_app.routes))"` (текущее значение: 42); curl изменённых эндпоинтов на запущенном приложении | `frontend/`, `nginx/web/`; устаревшие API из раздела «Известные дефекты» — не чинить без отдельного задания; дублирование `api/my_routes_dep/` — намеренное |
-| qa | `tasks/current/e2e/`, `tasks/current/DEFECTS.md`, `tasks/current/screenshots/` | curl-сценарии из критериев успеха текущего задания; регресс: `/docs`, `/users/get_all_users`, `/orders/get_all_orders`, один из `/api/v1/dep_examples/*`, `/art_home` | любой код продукта |
-| adversary | `tasks/current/ADVERSARIAL_REVIEW.md`, `tasks/current/screenshots/` | curl по запущенному приложению; логи `fastapi-application/log/` | всё, кроме своих файлов |
-| spec-writer | `tasks/current/REQUIREMENTS.md` — только на фазе создания задания, одним `write_file` по шаблону `.qwen/skills/task-spec/TEMPLATE.md` | чек-лист скилла `task-spec` (проверяет оркестратор) | код продукта; всё, кроме REQUIREMENTS.md на фазе создания |
+| `frontend-dev` | `fastapi-application/templates/` (Jinja2: `base.html`, `home.html`, `verification.html`, `mailing/`), встроенный JS внутри шаблонов | `cd fastapi-application && ../.venv/bin/python -c "from main import main_app"` без ошибок импорта; `curl /home/` и `/verify-email/` возвращают 200 (с активной cookie) или 401; скриншот в `tasks/current/screenshots/` | Python-модули — зона backend-dev; ничего не добавлять в `frontend/`, `nginx/web/`, `static/` — этих каталогов нет |
+| `backend-dev` | `fastapi-application/` (все Python-модули: `main.py`, `create_fastapi_app.py`, `core/`, `api/`, `actions/`, `admin/`, `middlewares/`, `views/`, `mailing/`, `utils/`, `errors_handlers.py`, `jinja_templates.py`, `alembic/`, `.env.template`); `docker-compose.yml` | `uv run ruff check .`; `cd fastapi-application && ../.venv/bin/python -c "from main import main_app; print(len(main_app.routes))"` (текущее значение: **7**); curl изменённых эндпоинтов на запущенном приложении; `../.venv/bin/alembic upgrade heads` для изменений моделей | `frontend/`, `nginx/web/`, `Makefile`, `nginx_pg_admin.yml` (не создавать, если не было); `docs/`, `AGENTS.md`, `QWEN.md`, `README.md` — зона оркестратора |
+| `qa` | `tasks/current/e2e/`, `tasks/current/DEFECTS.md`, `tasks/current/screenshots/` | curl-сценарии из критериев успеха текущего задания; регресс: `/docs`, `/admin/login`, `/api/v1/auth/register` (или login), `/api/v1/service/stats`, `/home/` | любой код продукта |
+| `adversary` | `tasks/current/ADVERSARIAL_REVIEW.md`, `tasks/current/screenshots/` | curl по запущенному приложению; логи stdout (формат `settings.logging.log_format`) | всё, кроме своих файлов |
+| `spec-writer` | `tasks/current/REQUIREMENTS.md` — только на фазе создания задания, одним `write_file` по шаблону `.qwen/skills/task-spec/TEMPLATE.md` | чек-лист скилла `task-spec` (проверяет оркестратор) | код продукта; всё, кроме REQUIREMENTS.md на фазе создания |
 
-Общее для всех: не редактировать `.qwen/`, `tasks/current/REQUIREMENTS.md`, папки
-архивных заданий `tasks/NNN-*`, `AGENTS.md`, `QWEN.md`, `README.md`, `docs/`,
-`templates_qwen_agents/`; не добавлять зависимости и тестовые
-фреймворки без решения оркестратора. Обновление документации в `docs/` координирует
-оркестратор. Единственное исключение: spec-writer на фазе создания пишет
-`tasks/current/REQUIREMENTS.md`; после старта исполнения файл заморожен для всех,
-кроме оркестратора.
+Общее для всех: не редактировать `.qwen/`, `tasks/current/REQUIREMENTS.md`,
+папки архивных заданий `tasks/NNN-*`, `AGENTS.md`, `QWEN.md`, `README.md`,
+`docs/`, `pyproject.toml` без решения оркестратора; не добавлять зависимости
+и тестовые фреймворки без решения оркестратора. Обновление документации в
+`docs/` координирует оркестратор. Единственное исключение: `spec-writer` на
+фазе создания пишет `tasks/current/REQUIREMENTS.md`; после старта исполнения
+файл заморожен для всех, кроме оркестратора.
 
-Границы ролей обеспечиваются системным промптом каждого агента и конфигурацией
-инструментов. Не обходите их командами оболочки: если инструкции говорят, что файл
-запрещён, не изменяйте его никаким другим способом.
+Границы ролей обеспечиваются системным промптом каждого агента и
+конфигурацией инструментов. Не обходите их командами оболочки: если
+инструкции говорят, что файл запрещён, не изменяйте его никаким другим
+способом.
 
 ### Соглашения репозитория агентного режима
 
-- Всё о задании живёт в его папке. Текущее задание — `tasks/current/` (контракт
-  `REQUIREMENTS.md` + рабочие артефакты `DEFECTS.md`, `ADVERSARIAL_REVIEW.md`,
-  `e2e/`, `screenshots/`, `dev/`); закрытое — `tasks/NNN-<slug>/` с тем же набором
-  плюс отчёт. В корне проекта файлов заданий нет.
-- Проверочные сценарии и доказательства qa живут в `tasks/current/e2e/` (скрипты,
-  заметки прогонов с командами и сырыми выводами). Писать туда может только qa.
+- Всё о задании живёт в его папке. Текущее задание — `tasks/current/`
+  (контракт `REQUIREMENTS.md` + рабочие артефакты `DEFECTS.md`,
+  `ADVERSARIAL_REVIEW.md`, `e2e/`, `screenshots/`, `dev/`); закрытое —
+  `tasks/NNN-<slug>/` с тем же набором плюс отчёт. В корне проекта файлов
+  заданий нет.
+- Проверочные сценарии и доказательства qa живут в `tasks/current/e2e/`
+  (скрипты, заметки прогонов с командами и сырыми выводами). Писать туда
+  может только qa.
 - Прогресс-файлы и сырые выводы разработчиков живут в `tasks/current/dev/`
-  (`phaseNN_progress.md` — по одному на фазу, плюс `*.txt` для сырых выводов команд).
-  Пишут туда backend-dev и frontend-dev; прогресс-файлы — страховка восстановления:
-  по ним свежий прогон продолжает упавшую фазу без пересказа истории.
+  (`phaseNN_progress.md` — по одному на фазу, плюс `*.txt` для сырых
+  выводов команд). Пишут туда backend-dev и frontend-dev; прогресс-файлы —
+  страховка восстановления: по ним свежий прогон продолжает упавшую фазу
+  без пересказа истории.
 - `tasks/current/DEFECTS.md` ведут qa и оркестратор (см. ниже);
   `tasks/current/ADVERSARIAL_REVIEW.md` — adversary и оркестратор.
 - Никаких эмодзи в коде, комментариях и логах.
-- Тестовые сервера живут только на время живого задания: субагент поднимает сервер
-  по своей спецификации и не глушит поднятый другим (его переиспользуют qa/adversary),
-  но все тестовые процессы гасит оркестратор при закрытии задания — ни одного
-  оставленного uvicorn после архивирования.
-- Новых тяжёлых зависимостей (фреймворки тестов, браузерные драйверы и т.п.) не
-  добавлять без явного решения оркестратора, согласованного с пользователем: проект
-  живёт без тест-инфраструктуры, и проверки делаются запуском приложения и curl.
-
-### Экономия токенов субагентов
-
-Каждый ход субагента пересылает весь накопленный контекст (~40–50K токенов), поэтому
-длинный прогон дорожает с каждым ходом, а упавший на 50+ ходу — миллионы токенов
-впустую. Общие правила для всех субагентов:
-
-- AGENTS.md и `tasks/current/REQUIREMENTS.md` читать один раз в начале прогона,
-  не перечитывать.
-- Не читать исходники продукта целиком: разработчик смотрит только свою зону правок,
-  qa проверяет поведение, а не код.
-- Объединять команды проверки в пачки (один shell-вызов — несколько curl/команд),
-  сырые выводы сразу писать в файл (`tasks/current/e2e/` у qa, `tasks/current/dev/`
-  у разработчиков), а не пересказывать в чате.
-- Ошибку читать и исправлять, а не повторять ту же команду вслепую. Две подряд
-  неудачные попытки починить одно и то же — стоп и доклад оркестратору.
-- Работать на минимум ходов: чем короче прогон, тем дешевле каждый следующий ход.
-
-Правило для оркестратора: главный источник перерасхода — **backend-dev**, и лучшая
-экономия делается ДО его запуска. Порядок защиты: (1) спека с планом фаз от
-spec-writer — объём режется на фазы заранее, а не в момент делегирования;
-(2) короткие фазы — фаза = 1–3 файла = бюджет ~10–15 ходов; (3) дисциплина внутри
-фазы. Прогон, который пишет код, тяжелеет быстрее всех: каждый ход дописывает
-контекст чтением исходников, полными `write_file` и traceback'ами ошибок. Формат
-qa/adversary (пачки curl одним shell-вызовом, сырые выводы сразу в файл) дешёвый —
-его не менять. Правила делегирования backend-dev:
-
-1. Делегируй строго по фазам из REQUIREMENTS.md; план фаз уже разрезан spec-writer'ом
-   и подтверждён пользователем. Фаза кажется большой — режь её сам ДО запуска,
-   а не после.
-2. В спецификации — только: какие файлы, контракт (имена/поведение), checkpoint,
-   ссылка на прогресс-файл (для продолжения). Детали — в REQUIREMENTS.md, который
-   читается один раз, а не в текст спецификации, пересылаемый каждый ход.
-3. В спецификацию backend-dev явно включать: читать только свою зону правок (не весь
-   репозиторий), план файлов до первой записи, новый файл — одним `write_file`,
-   существующий — только точечным `edit`, сырые выводы команд — сразу в файл
-   (`tasks/current/dev/`), прогресс-чекпоинт после каждого файла, ошибку чинить
-   узко (правка + одна контрольная команда), полный smoke — один раз в конце фазы.
-4. Упёршийся в лимит / упавший прогон не продолжать: узкий перезапуск «доделай X»
-   с чистым контекстом по прогресс-файлу и `git diff`, а не резюме марафона (резюме
-   проигрывает весь контекст заново — это удваивает стоимость).
-
-Урок 001-md-articles-blog (2026-08-31): монолитный запуск backend-dev на весь бэкенд
-(~8 модулей + миграция) обошёлся в ~25 млн токенов, при этом qa и adversary уложились
-дёшево — проблема была только в монолитном код-писателе.
-
-Как правильно запускать тестера (qa) — см. раздел «Экономия токенов» в
-`.qwen/agents/qa.md`: короткий сфокусированный прогон, пачки curl-проверок, сервер
-проверяется `pgrep`/`curl http://127.0.0.1:8000/openapi.json` до подъёма (не дублировать
-процессы). Оркестратор запускает qa одним блоком задания с готовым списком проверок —
-без промежуточных «проверь ещё вот это».
+- Тестовые сервера живут только на время живого задания: субагент поднимает
+  сервер по своей спецификации и не глушит поднятый другим (его переиспользуют
+  qa/adversary), но все тестовые процессы гасит оркестратор при закрытии
+  задания — ни одного оставленного uvicorn после архивирования.
+- Новых тяжёлых зависимостей (фреймворки тестов, браузерные драйверы и т.п.)
+  не добавлять без явного решения оркестратора, согласованного с
+  пользователем: проект живёт без тест-инфраструктуры, и проверки делаются
+  запуском приложения и curl.
 
 ### DEFECTS.md — реестр дефектов
 
-Все дефекты живут в `tasks/current/DEFECTS.md` (папка текущего задания; создаётся при
-первом дефекте), одна запись на дефект, новые сверху. При архивировании задания файл
-переезжает в `tasks/NNN-<slug>/` вместе с папкой.
-Авторы: **qa** (создание, закрытие, переоткрытие) и **оркестратор** (фиксация ответов
-разработчиков, отклонение). Больше никто никогда его не редактирует.
+Все дефекты живут в `tasks/current/DEFECTS.md` (папка текущего задания;
+создаётся при первом дефекте), одна запись на дефект, новые сверху. При
+архивировании задания файл переезжает в `tasks/NNN-<slug>/` вместе с
+папкой. Авторы: **qa** (создание, закрытие, переоткрытие) и **оркестратор**
+(фиксация ответов разработчиков, отклонение). Больше никто никогда его не
+редактирует.
 
 Формат, точно:
 
@@ -494,15 +521,16 @@ qa/adversary (пачки curl одним shell-вызовом, сырые выв
 | CLOSED | qa перетестировал и подтвердил исправление либо принял спор | только qa |
 | REJECTED | Исправляться не будет, с письменной причиной | только оркестратор |
 
-Каждая смена статуса добавляет строку в History с указанием, кто, что и почему сделал.
-Дефект не завершён, потому что так сказал разработчик, — он завершён, когда qa его закрывает.
+Каждая смена статуса добавляет строку в History с указанием, кто, что и
+почему сделал. Дефект не завершён, потому что так сказал разработчик, — он
+завершён, когда qa его закрывает.
 
 ### ADVERSARIAL_REVIEW.md — находки adversary
 
-Все находки adversary живут в `tasks/current/ADVERSARIAL_REVIEW.md` (папка текущего
-задания; создаётся при первом прогоне; при архивировании переезжает в
-`tasks/NNN-<slug>/` вместе с папкой).
-Авторы: **adversary** (создание записей) и **оркестратор** (заполнение Disposition). Больше
+Все находки adversary живут в `tasks/current/ADVERSARIAL_REVIEW.md` (папка
+текущего задания; создаётся при первом прогоне; при архивировании
+переезжает в `tasks/NNN-<slug>/` вместе с папкой). Авторы: **adversary**
+(создание записей) и **оркестратор** (заполнение Disposition). Больше
 никто.
 
 Формат, точно:
@@ -519,6 +547,7 @@ qa/adversary (пачки curl одним shell-вызовом, сырые выв
 
     Disposition: PENDING
 
-Оркестратор заменяет PENDING на `ACCEPTED -> DEF-NNN` или `REJECTED - причина`.
-Принятые находки воспроизводятся и заводятся в DEFECTS.md силами qa. Когда задание
-закрыто, ни одна запись не может оставаться PENDING.
+Оркестратор заменяет PENDING на `ACCEPTED -> DEF-NNN` или `REJECTED -
+причина`. Принятые находки воспроизводятся и заводятся в DEFECTS.md
+силами qa. Когда задание закрыто, ни одна запись не может оставаться
+PENDING.
